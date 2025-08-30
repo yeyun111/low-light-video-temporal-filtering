@@ -1,0 +1,15 @@
+# This file contain the default configuration as a template
+#pipe:
+#  - filter: filter_name_0
+#     param_0: value_0
+#     param_1: value_1
+#  - filter: filter_name_1
+#     param_2: value_2
+#     param_3: value_3
+#  ...
+
+pipe: none
+frames_per_clip: 48
+overlap_frames: 4
+output_crf: 24
+ffmpeg: ffmpeg

@@ -1,0 +1,6 @@
+video-samples
+*.mp4
+TODO
+temp.py
+__pycache__
+test*

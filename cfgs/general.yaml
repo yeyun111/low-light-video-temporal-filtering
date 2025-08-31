@@ -1,0 +1,6 @@
+# This file contain the default configuration for the low light video temporal filtering
+pipe:
+  #- filter: wiener
+  #  window_size: [19, 1, 1, 1]
+  - filter: wiener
+    window_size: [19, 1, 1, 1]

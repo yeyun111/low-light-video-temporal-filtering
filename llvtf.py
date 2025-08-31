@@ -1,5 +1,6 @@
 import os
 
+from scipy.ndimage import gaussian_filter
 from omegaconf import OmegaConf
 
 from filters import video_filters
@@ -29,17 +30,18 @@ if __name__ == "__main__":
             print("filters pipeline:")
             for vf_cfg in v:
                 filter_id = vf_cfg["filter"]
-                print(f"  {filter_id}:")
+                print(f"  {filter_id}")
                 for pname, pval in vf_cfg.items():
                     if pname != "filter":
                         print(f"    {pname}: {pval}")
         else:
-            print(f"  {k}: {v}")
+            print(f"{k}: {v}")
     print("####################################################################")
 
     # Load video to array list
     video_array_list = load_video_to_ndarrays(args.input, cfg.frames_per_clip, cfg.overlap_frames)
     num_videos = len(video_array_list)
+    
     logger.info(
         f"Loaded {args.input} to {num_videos} clips with "
         f"{','.join([str(video_array.shape[0]) for video_array in video_array_list])} frames."
@@ -50,7 +52,7 @@ if __name__ == "__main__":
     for vf_cfg in cfg.pipe:
         filter_id = vf_cfg.pop("filter")
         pipe_filters.append(video_filters[filter_id](**OmegaConf.to_object(vf_cfg)))
-
+    
     # Apply filter to denoise
     denoised_array_list = []
     H, W = video_array_list[0].shape[1:3]

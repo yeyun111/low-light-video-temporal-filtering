@@ -1,0 +1,6 @@
+padding_size: [11, 0, 0, 0]
+block_size: 16
+position_noise: 0.1
+velocity_noise: 0.1
+acceleration_noise: 0.1 # -1 indicates no acceleration
+observation_noise: 1.0

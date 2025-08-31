@@ -191,10 +191,30 @@ def temporal_stitch_frames(frames_array_list: List[numpy.ndarray], overlap_frame
     return stitched_frames_array
 
 def load_config(config_path: str) -> OmegaConf:
-    default_config_path = os.path.join(os.path.dirname(__file__), "cfgs/default.yaml")
+    default_config_path = os.path.join(os.path.dirname(__file__), "cfgs/default/template.yaml")
     cfg = OmegaConf.load(default_config_path)
     cfg.update(OmegaConf.load(config_path))
     return cfg
+
+def extract_average_frame(video_array_list: List[numpy.ndarray]) -> numpy.ndarray:
+    """
+    Extract average frame from video array list.
+
+    Args:
+        video_array_list (List[numpy.ndarray]): List of ndarrays.
+
+    Returns:
+        numpy.ndarray: Average frame ndarray in HWC.
+    """
+
+    _, H, W, C = video_array_list[0].shape
+    average_frame = numpy.zeros((H, W, C), dtype=video_array_list[0].dtype)
+    num_frames = [_.shape[0] for _ in video_array_list]
+    weights = [_ / sum(num_frames) for _ in num_frames]
+    for video_array, weight in zip(video_array_list, weights):
+        average_frame += video_array.mean(axis=0) * weight
+
+    return average_frame
 
 if __name__ == "__main__":
     T = 100

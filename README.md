@@ -6,7 +6,7 @@ A non-AI approach to denoise with temporal filters for low-light videos.
 
 This project provides a configurable pipeline for denoising low-light videos. All the processing methods are implemented as filters that can be chained into a pipeline.   
 
-The following filters are currently supported:
+The following filters are supported:
 
 - **Wiener Filter**: Wiener filter from scipy.signal.
 - **Kalman Filter**: Kalman filter from simdkalman. It models the temporal trajectory of each pixel as a dynamic system with position, velocity, and optional acceleration states.
@@ -65,3 +65,8 @@ python llvtf.py input_video.mp4 --config cfgs/general.yaml --output denoised_vid
 
 - `video_path`: Path to the flat field reference video (uniform light source)
 - `smooth_size`: Smoothing parameter for the flat field
+
+## Known Issues
+
+- Compute/memory efficiency is not optimized at all.
+- No full tests are done.

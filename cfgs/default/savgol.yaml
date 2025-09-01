@@ -1,0 +1,4 @@
+window_size: 11
+polyorder: 3
+deriv: 0
+delta: 1.0

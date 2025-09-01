@@ -2,11 +2,10 @@ import os
 import sys
 import inspect
 from abc import ABC, abstractmethod
-from typing import Iterable
 
 from tqdm import tqdm
 import numpy
-from scipy.signal import wiener
+from scipy.signal import savgol_filter, wiener
 from scipy.ndimage import gaussian_filter
 from omegaconf import OmegaConf
 import simdkalman
@@ -34,32 +33,48 @@ class BaseFilter(ABC):
         pass
 
     def __call__(self, video_array: numpy.ndarray) -> numpy.ndarray:
-        padded = numpy.pad(
-            video_array, 
-            [(p, p) for p in self.padding_size], 
-            mode=self.padding_mode
-        )
-        tp, hp, wp, cp = padded.shape
-        filtered = self.filter(padded)
-        depadded = filtered[self.padding_size[0]:tp-self.padding_size[0], 
-                            self.padding_size[1]:hp-self.padding_size[1], 
-                            self.padding_size[2]:wp-self.padding_size[2], 
-                            self.padding_size[3]:cp-self.padding_size[3]]
-        return depadded
+        if self.padding_size is None:
+            return self.filter(video_array)
+        else:
+            padded = numpy.pad(
+                video_array, 
+                [(p, p) for p in self.padding_size], 
+                mode=self.padding_mode
+            )
+            tp, hp, wp, cp = padded.shape
+            filtered = self.filter(padded)
+            depadded = filtered[self.padding_size[0]:tp-self.padding_size[0], 
+                                self.padding_size[1]:hp-self.padding_size[1], 
+                                self.padding_size[2]:wp-self.padding_size[2], 
+                                self.padding_size[3]:cp-self.padding_size[3]]
+            return depadded
+
+
+class SavitzkyGolayFilter(BaseFilter):
+    """
+    Savitzky Golay filter for temporal denoising using scipy.signal.savgol_filter
+    """
+    id = "savgol"
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.padding_mode = None
+    
+    def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
+        return savgol_filter(video_array, self.window_size, self.polyorder, self.deriv, self.delta, mode="mirror")
 
 
 class WienerFilter(BaseFilter):
     """
-    Wiener filter for temporal denoising using scipy.signal.wiener.
+    Wiener filter for temporal denoising using scipy.signal.wiener
     """
     id: str = "wiener"
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.padding_size is None:
             self.padding_size = (
-                kwargs["window_size"][0] // 2, 
-                kwargs["window_size"][1] // 2, 
-                kwargs["window_size"][2] // 2, 
+                self.window_size[0] // 2, 
+                self.window_size[1] // 2, 
+                self.window_size[2] // 2, 
                 0
             )
     
@@ -156,6 +171,7 @@ class AverageFrameBasedFilter(BaseFilter):
         super().__init__(**kwargs)
         video_list = load_video_to_ndarrays(self.video_path, overlap_frames=0)
         self.average_frame = extract_average_frame(video_list)[numpy.newaxis]
+        self.padding_mode = self.padding_size = None
 
 
 class DarkFilter(AverageFrameBasedFilter):
@@ -176,7 +192,7 @@ class FlatFilter(AverageFrameBasedFilter):
         super().__init__(**kwargs)
         if self.dark_video_path is not None:
             video_list = load_video_to_ndarrays(self.video_path, overlap_frames=0)
-            self.flat_frame -= extract_average_frame(video_list)[numpy.newaxis]
+            self.flat_frame = self.average_frame - extract_average_frame(video_list)[numpy.newaxis]
             self.flat_frame = numpy.clip(self.flat_frame, 0, None)
         self.flat_frame = gaussian_filter(self.average_frame, sigma=self.smooth_size)
         if not self.white: # per-channel normalize

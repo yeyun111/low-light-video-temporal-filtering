@@ -24,14 +24,14 @@ def load_video_to_ndarrays(video_path: str, frames_per_clip: int = 120, overlap_
     Returns:
         List[numpy.ndarray]: Ndarrays in float32.
     """
-    clip_arrays = []
     with av.open(video_path, mode='r') as container:
         video_stream = container.streams.video[0]
         frames = []
         for frame in container.decode(video_stream):
             frames.append(frame.to_ndarray(format='rgb24'))
         frames_array = numpy.array(frames, dtype=numpy.float32) / 255.0
-
+        
+    clip_arrays = []
     clip_index = 0
     t0 = clip_index * (frames_per_clip - overlap_frames)
     while t0 + frames_per_clip <= len(frames_array):

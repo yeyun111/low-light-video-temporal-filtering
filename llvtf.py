@@ -20,6 +20,12 @@ if __name__ == "__main__":
 
     cfg = load_config(args.config)
 
+    # Initialize filters for the pipeline
+    pipe_filters = []
+    for vf_cfg in cfg.pipe:
+        filter_id = vf_cfg.pop("filter")
+        pipe_filters.append(video_filters[filter_id](**OmegaConf.to_object(vf_cfg)))
+    
     print("\n#####################################################################")
     print("########### Low Light Video Temporal Filtering without AI ###########")
     print("#####################################################################")
@@ -28,11 +34,12 @@ if __name__ == "__main__":
     for k, v in cfg.items():
         if k == 'pipe':
             print("filters pipeline:")
-            for vf_cfg in v:
-                filter_id = vf_cfg["filter"]
-                print(f"  {filter_id}")
-                for pname, pval in vf_cfg.items():
-                    if pname != "filter":
+            for vf in pipe_filters:
+                print(f"  {vf.id}")
+                for pname, pval in vf.__dict__.items():
+                    if pname != "id" and (
+                        isinstance(pval, (bool, int, float, str))
+                    ):
                         print(f"    {pname}: {pval}")
         else:
             print(f"{k}: {v}")
@@ -47,18 +54,12 @@ if __name__ == "__main__":
         f"{','.join([str(video_array.shape[0]) for video_array in video_array_list])} frames."
     )
 
-    # Initialize filters for the pipeline
-    pipe_filters = []
-    for vf_cfg in cfg.pipe:
-        filter_id = vf_cfg.pop("filter")
-        pipe_filters.append(video_filters[filter_id](**OmegaConf.to_object(vf_cfg)))
-    
     # Apply filter to denoise
     denoised_array_list = []
     H, W = video_array_list[0].shape[1:3]
     for i, video_array in enumerate(video_array_list):
         for vf in pipe_filters:
-            logger.info(f"Denoising Video Clip: {i + 1}/{num_videos}, Shape: {video_array.shape}, with {vf.id} filter ...")
+            logger.info(f"Processing clip: {i + 1}/{num_videos}, Shape: {video_array.shape}, with {vf.id} filter ...")
             video_array = vf(video_array)
         denoised_array_list.append(video_array)
 

@@ -174,8 +174,15 @@ class FlatFilter(AverageFrameBasedFilter):
     id: str = "flat"
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.dark_video_path is not None:
+            video_list = load_video_to_ndarrays(self.video_path, overlap_frames=0)
+            self.flat_frame -= extract_average_frame(video_list)[numpy.newaxis]
+            self.flat_frame = numpy.clip(self.flat_frame, 0, None)
         self.flat_frame = gaussian_filter(self.average_frame, sigma=self.smooth_size)
-        self.flat_frame /= self.flat_frame.max()
+        if not self.white: # per-channel normalize
+            self.flat_frame /= self.flat_frame.max(axis=(0, 1, 2), keepdims=True)
+        else:
+            self.flat_frame /= self.flat_frame.max()
 
     def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
         return video_array / self.flat_frame.astype(video_array.dtype)

@@ -1,0 +1,4 @@
+video_path: null
+dark_video_path: null
+smooth_size: 11
+white: true # Default is true, if you shoot a video with color bias (e.g. sky, LED screen, ...), set it false

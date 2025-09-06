@@ -3,12 +3,13 @@ import sys
 import inspect
 from abc import ABC, abstractmethod
 
-from tqdm import tqdm
 import numpy
 from scipy.signal import savgol_filter, wiener
 from scipy.ndimage import gaussian_filter
+import torch
 from omegaconf import OmegaConf
 import simdkalman
+from tqdm import tqdm
 
 from utils import load_video_to_ndarrays, extract_average_frame, logger
 
@@ -165,6 +166,68 @@ class KalmanFilter(BaseFilter):
                 denoised[:, h0:h0+bsize, w0:w0+bsize, :] = block_smoothed
         return denoised
 
+
+class DCTThresholdingFilter(BaseFilter):
+    """
+    DCT thresholding denoising following:
+
+    Guoshen Yu, and Guillermo Sapiro, 
+    DCT Image Denoising: a Simple and Effective Image Denoising Algorithm, 
+    Image Processing On Line, 1 (2011), pp. 292–296. 
+    https://doi.org/10.5201/ipol.2011.ys-dct
+    
+    """
+    id: str = "dct"
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dtype = getattr(torch, self.dtype)
+        if self.device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(self.device)
+        
+        T, H, W = self.kernel_size
+        kernels = torch.empty(T * H * W, 1, T, H, W, dtype=self.dtype)
+        with torch.no_grad():
+            kt, kh, kw = torch.meshgrid(
+                torch.arange(T), 
+                torch.arange(H), 
+                torch.arange(W), 
+                indexing="ij"
+            )
+
+            for it in range(T):
+                for ih in range(H):
+                    for iw in range(W):
+                        ct = numpy.sqrt(1/T) if it == 0 else numpy.sqrt(2/T)
+                        ch = numpy.sqrt(1/H) if ih == 0 else numpy.sqrt(2/H)
+                        cw = numpy.sqrt(1/W) if iw == 0 else numpy.sqrt(2/W)
+                        c = ct * ch * cw
+
+                        i = it * H * W + ih * W + iw
+                        kernels[i, 0] = torch.cos((2 * kt + 1) * it * torch.pi / (2 * T)) * \
+                                        torch.cos((2 * kh + 1) * ih * torch.pi / (2 * H)) * \
+                                        torch.cos((2 * kw + 1) * iw * torch.pi / (2 * W)) * c
+                        
+            self.register_buffer("kernels", kernels.to(self.device))
+            self.zo = torch.nn.Hardshrink(lambd=self.threshold)
+
+    def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
+        t_video = torch.from_numpy(video_array, dtype=self.dtype).to(self.device)
+        
+        t, h, w, c = t_video.shape
+        tk, hk, wk = self.kernels.shape[2:]
+        subbands = torch.nn.functional.conv3d(
+            t_video.permute(3, 0, 1, 2).unsqueeze(1), 
+            self.kernels, padding=(tk - 1, hk - 1, wk - 1)
+        )
+        subbands_filtered = self.zo(subbands)
+        t_video_filtered = torch.nn.functional.conv_transpose3d(
+            subbands_filtered, 
+            self.kernels, 
+        )[:, tk-1:-tk+1, hk-1:-hk+1, wk-1:-wk+1]
+        
+        video_array_filtered = t_video_filtered.permute(1, 2, 3, 0).cpu().numpy()
+        return video_array_filtered
 
 class AverageFrameBasedFilter(BaseFilter):
     def __init__(self, **kwargs):

@@ -1,4 +1,4 @@
 kernel_size: [3, 3, 3] # THW
 threshold: 0.05
 device: null
-dtype: float32
+dtype: float16

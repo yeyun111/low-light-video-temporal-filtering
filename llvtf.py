@@ -1,4 +1,5 @@
 import os
+import gc
 
 from scipy.ndimage import gaussian_filter
 from omegaconf import OmegaConf
@@ -61,9 +62,15 @@ if __name__ == "__main__":
         for vf in pipe_filters:
             logger.info(f"Processing clip: {i + 1}/{num_videos}, Shape: {video_array.shape}, with {vf.id} filter ...")
             video_array = vf(video_array)
+            gc.collect()
         denoised_array_list.append(video_array)
 
     logger.info(f"Exporting denoised video to {args.output} ...")
     denoised_frames_array = temporal_stitch_frames(denoised_array_list, cfg.overlap_frames)
+
+    for _ in denoised_array_list:
+        del _
+    gc.collect()
+
     save_ndarray_to_video(denoised_frames_array, args.output, args.input, crf=cfg.output_crf, ffmpeg=cfg.ffmpeg)
     logger.info(f"Done!")

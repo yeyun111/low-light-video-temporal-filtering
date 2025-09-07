@@ -2,6 +2,7 @@ import os
 import sys
 import inspect
 from abc import ABC, abstractmethod
+import gc
 
 import numpy
 from scipy.signal import savgol_filter, wiener
@@ -208,25 +209,40 @@ class DCTThresholdingFilter(BaseFilter):
                                         torch.cos((2 * kh + 1) * ih * torch.pi / (2 * H)) * \
                                         torch.cos((2 * kw + 1) * iw * torch.pi / (2 * W)) * c
                         
-            self.register_buffer("kernels", kernels.to(self.device))
+            self.kernels = kernels.to(self.device)
             self.zo = torch.nn.Hardshrink(lambd=self.threshold)
 
     def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
-        t_video = torch.from_numpy(video_array, dtype=self.dtype).to(self.device)
+        t_video = torch.from_numpy(video_array).to(self.dtype).to(self.device)
         
-        t, h, w, c = t_video.shape
         tk, hk, wk = self.kernels.shape[2:]
-        subbands = torch.nn.functional.conv3d(
-            t_video.permute(3, 0, 1, 2).unsqueeze(1), 
-            self.kernels, padding=(tk - 1, hk - 1, wk - 1)
-        )
-        subbands_filtered = self.zo(subbands)
-        t_video_filtered = torch.nn.functional.conv_transpose3d(
-            subbands_filtered, 
-            self.kernels, 
-        )[:, tk-1:-tk+1, hk-1:-hk+1, wk-1:-wk+1]
+        tp, hp, wp = tk - 1, hk - 1, wk - 1
+        with torch.no_grad():
+            subbands = torch.nn.functional.conv3d(
+                torch.nn.functional.pad(
+                    t_video.permute(3, 0, 1, 2).unsqueeze(1), (wp, wp, hp, hp, tp, tp), mode=self.padding_mode
+                ),
+                self.kernels
+            )
+            subbands_filtered = self.zo(subbands)
+            t_video_filtered = torch.nn.functional.conv_transpose3d(
+                subbands_filtered, 
+                self.kernels, 
+            )
+            *_, tf, hf, wf = t_video_filtered.shape
+            t_video_filtered = t_video_filtered[..., tk-1:tf-tk+1, hk-1:hf-hk+1, wk-1:wf-wk+1]
+            t_video_filtered.div_(numpy.prod(self.kernel_size))
         
-        video_array_filtered = t_video_filtered.permute(1, 2, 3, 0).cpu().numpy()
+        video_array_filtered = \
+            t_video_filtered.squeeze(1).permute(1, 2, 3, 0)\
+            .cpu().numpy().astype(video_array.dtype)
+
+        del t_video
+        del subbands
+        del subbands_filtered
+        del t_video_filtered
+        gc.collect()
+        
         return video_array_filtered
 
 class AverageFrameBasedFilter(BaseFilter):

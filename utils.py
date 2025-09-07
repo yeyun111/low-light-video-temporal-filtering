@@ -2,6 +2,7 @@ import os
 import subprocess
 import base64
 from typing import List
+import gc
 
 import logging
 import numpy
@@ -76,7 +77,10 @@ def save_ndarray_to_video(
     if len(frames_array.shape) != 4 or frames_array.shape[3] != 3:
         raise ValueError(f"frames_array must be 4-dim with shape (T, H, W, 3), but got {frames_array.shape}")
 
-    frames_array = numpy.clip((frames_array * 255.0).round(), 0, 255).astype(numpy.uint8)
+    frames_array *= 255.0
+    frames_array = frames_array.round().astype(numpy.int16)
+    frames_array = frames_array.clip(0, 255)
+    frames_array = frames_array.astype(numpy.uint8)
 
     random_suffix = base64.urlsafe_b64encode(os.urandom(4)).decode('utf-8').rstrip('=')
     _temp_video_path = f"_LLVTF_{random_suffix}.mp4"

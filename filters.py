@@ -34,7 +34,7 @@ class BaseFilter(ABC):
     def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
         pass
 
-    def __call__(self, video_array: numpy.ndarray) -> numpy.ndarray:
+    def _filter_with_padding(self, video_array: numpy.ndarray) -> numpy.ndarray:
         if self.padding_size is None:
             return self.filter(video_array)
         else:
@@ -50,6 +50,37 @@ class BaseFilter(ABC):
                                 self.padding_size[2]:wp-self.padding_size[2], 
                                 self.padding_size[3]:cp-self.padding_size[3]]
             return depadded
+
+    def _call_filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
+        if self.down_scale is not None and len(self.down_scale) == 3:
+            with torch.no_grad():
+                video_tensor = torch.from_numpy(video_array).permute(3, 0, 1, 2).unsqueeze(0)
+                down_scaled_video_tensor = torch.nn.functional.interpolate(video_tensor, scale_factor=self.down_scale, mode="trilinear")
+                recon_video_tensor = torch.nn.functional.interpolate(down_scaled_video_tensor, video_tensor.shape[-3:], mode="trilinear")
+                resid_array = (video_tensor - recon_video_tensor)[0].permute(1, 2, 3, 0).cpu().numpy()
+                video_array = down_scaled_video_tensor[0].permute(1, 2, 3, 0).cpu().numpy()
+            del video_tensor
+            del down_scaled_video_tensor
+            del recon_video_tensor
+            gc.collect()
+        else:
+            resid_array = None
+        
+        video_array = self._filter_with_padding(video_array)
+
+        if resid_array is not None:
+            video_array = resid_array + \
+                torch.nn.functional.interpolate(
+                    torch.from_numpy(video_array).permute(3, 0, 1, 2).unsqueeze(0), 
+                    resid_array.shape[:3], 
+                    mode="trilinear"
+                )[0].permute(1, 2, 3, 0).cpu().numpy()
+            gc.collect()
+
+        return video_array
+
+    def __call__(self, video_array: numpy.ndarray) -> numpy.ndarray:
+        return self._call_filter(video_array)
 
 
 class SavitzkyGolayFilter(BaseFilter):

@@ -39,7 +39,7 @@ if __name__ == "__main__":
                 print(f"  {vf.id}")
                 for pname, pval in vf.__dict__.items():
                     if pname != "id" and (
-                        isinstance(pval, (bool, int, float, str))
+                        isinstance(pval, (bool, int, float, str, list, tuple))
                     ):
                         print(f"    {pname}: {pval}")
         else:

@@ -1,0 +1,5 @@
+
+pattern: [[[-1]], [[2]], [[-1]]]
+threshold: 0.1
+device: null
+dtype: float16

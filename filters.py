@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import gc
 
 import numpy
-from scipy.signal import savgol_filter, wiener
+from scipy.signal import savgol_filter, wiener, medfilt
 from scipy.ndimage import gaussian_filter
 import torch
 from omegaconf import OmegaConf
@@ -275,6 +275,95 @@ class DCTThresholdingFilter(BaseFilter):
         gc.collect()
         
         return video_array_filtered
+
+
+class PatternThresholdingFilter(BaseFilter):
+    """
+    Pattern thresholding denoising inspired by:
+
+    Guoshen Yu, and Guillermo Sapiro, 
+    DCT Image Denoising: a Simple and Effective Image Denoising Algorithm, 
+    Image Processing On Line, 1 (2011), pp. 292–296. 
+    https://doi.org/10.5201/ipol.2011.ys-dct
+
+    A user defined pattern to remove is required, then
+    1) the pattern will be normalized to have unit L2 norm
+    2) other random basis are generated, together they form a orthonormal basis
+    3) the pattern is thresholded
+    4) the thresholded pattern is used to reconstruct the image
+    
+    """
+    id: str = "pattern"
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dtype = getattr(torch, self.dtype)
+        if self.device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(self.device)
+        
+        pattern = torch.FloatTensor(self.pattern)
+        T, H, W = pattern.shape
+        N = T * H * W
+
+        self.kernel_size = pattern.shape
+
+        # Form a orthonormal basis
+        with torch.no_grad():
+            basis = torch.empty((N, N), dtype=pattern.dtype)
+            basis[:, 0] = pattern.flatten() / pattern.norm()
+            basis[:, 1:] = torch.randn((N, N-1), dtype=pattern.dtype)
+            q, _ = torch.linalg.qr(basis)
+            self.kernels = q.T.reshape(N, 1, T, H, W).to(self.dtype).to(self.device)
+
+    def filter(self, video_array: numpy.ndarray) -> numpy.ndarray:
+        t_video = torch.from_numpy(video_array).to(self.dtype).to(self.device)
+        
+        tk, hk, wk = self.kernels.shape[2:]
+        tp, hp, wp = tk - 1, hk - 1, wk - 1
+        with torch.no_grad():
+            subbands = torch.nn.functional.conv3d(
+                torch.nn.functional.pad(
+                    t_video.permute(3, 0, 1, 2).unsqueeze(1), (wp, wp, hp, hp, tp, tp), mode=self.padding_mode
+                ),
+                self.kernels
+            )
+            det_mask = (subbands[:, :1].abs() > self.threshold).to(self.dtype)
+            C, N, T, H, W = subbands.shape
+            subbands_filtered = medfilt(
+                subbands.permute(0, 1, 3, 4, 2).flatten().cpu().numpy().astype(numpy.float32), 
+                4 * N - 1
+            )
+            subbands_filtered = torch.from_numpy(subbands_filtered)\
+            .reshape(C, N, H, W, T)\
+            .permute(0, 1, 4, 2, 3)\
+            .to(self.dtype)\
+            .to(self.device)
+
+            subbands_filtered = subbands_filtered * det_mask + subbands * (1 - det_mask)
+            t_video_filtered = torch.nn.functional.conv_transpose3d(
+                subbands_filtered, 
+                self.kernels, 
+            )
+            
+            del subbands
+            del subbands_filtered
+            del det_mask
+            gc.collect()
+            
+            *_, tf, hf, wf = t_video_filtered.shape
+            t_video_filtered = t_video_filtered[..., tk-1:tf-tk+1, hk-1:hf-hk+1, wk-1:wf-wk+1]
+            t_video_filtered.div_(numpy.prod(self.kernel_size))
+        
+        video_array_filtered = \
+            t_video_filtered.squeeze(1).permute(1, 2, 3, 0)\
+            .cpu().numpy().astype(video_array.dtype)
+
+        del t_video
+        del t_video_filtered
+        gc.collect()
+        
+        return video_array_filtered
+
 
 class AverageFrameBasedFilter(BaseFilter):
     def __init__(self, **kwargs):

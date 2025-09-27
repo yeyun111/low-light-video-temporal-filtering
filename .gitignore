@@ -5,3 +5,4 @@ temp.py
 __pycache__
 test*
 .vscode
+.codebuddy

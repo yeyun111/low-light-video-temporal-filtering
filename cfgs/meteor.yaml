@@ -8,7 +8,7 @@ pipe:
     down_scale: [0.5, 0.33, 0.33]
   - filter: pattern
     pattern: [[[-1]], [[2]], [[-1]]]
-    threshold: 0.02
+    threshold: 0.5
     down_scale: [1.0, 0.33, 0.33]
 
 frames_per_clip: 36
